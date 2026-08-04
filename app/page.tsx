@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Question = {
   id: string;
@@ -124,12 +124,21 @@ const QUESTIONS: Question[] = [
 ];
 
 const STORAGE_KEY = "c-grade3-reviewed";
+const FLOW_SPEEDS = [
+  { label: "ゆっくり", value: 22 },
+  { label: "ふつう", value: 40 },
+  { label: "はやい", value: 68 },
+] as const;
 
 export default function Home() {
   const [activeTheme, setActiveTheme] = useState("すべて");
   const [query, setQuery] = useState("");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [reviewed, setReviewed] = useState<Set<string>>(new Set());
+  const [flowActive, setFlowActive] = useState(false);
+  const [flowPaused, setFlowPaused] = useState(false);
+  const [flowSpeed, setFlowSpeed] = useState(40);
+  const flowFrame = useRef<number | null>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -152,6 +161,51 @@ export default function Home() {
 
   const allVisibleOpen = filtered.length > 0 && filtered.every((item) => revealed.has(item.id));
   const progress = Math.round((reviewed.size / QUESTIONS.length) * 100);
+
+  useEffect(() => {
+    if (!flowActive || flowPaused) return;
+
+    let previous = window.performance.now();
+    let loopAt = 0;
+
+    const move = (now: number) => {
+      const elapsed = Math.min(now - previous, 50);
+      previous = now;
+      const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 8;
+
+      if (atBottom) {
+        if (!loopAt) loopAt = now + 1600;
+        if (now >= loopAt) {
+          const questionsTop = document.getElementById("questions")?.offsetTop ?? 0;
+          window.scrollTo({ top: questionsTop, behavior: "auto" });
+          loopAt = 0;
+        }
+      } else {
+        loopAt = 0;
+        window.scrollBy({ top: (flowSpeed * elapsed) / 1000, behavior: "auto" });
+      }
+
+      flowFrame.current = window.requestAnimationFrame(move);
+    };
+
+    flowFrame.current = window.requestAnimationFrame(move);
+    return () => {
+      if (flowFrame.current !== null) window.cancelAnimationFrame(flowFrame.current);
+      flowFrame.current = null;
+    };
+  }, [flowActive, flowPaused, flowSpeed]);
+
+  useEffect(() => {
+    if (!flowActive) return;
+    const stopWithEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setFlowActive(false);
+        setFlowPaused(false);
+      }
+    };
+    window.addEventListener("keydown", stopWithEscape);
+    return () => window.removeEventListener("keydown", stopWithEscape);
+  }, [flowActive]);
 
   function toggleAnswer(id: string) {
     setRevealed((current) => {
@@ -190,6 +244,24 @@ export default function Home() {
     }, 0);
   }
 
+  function startFlow() {
+    if (!filtered.length) return;
+    setRevealed((current) => {
+      const next = new Set(current);
+      filtered.forEach((item) => next.add(item.id));
+      return next;
+    });
+    setFlowPaused(false);
+    const questionsTop = document.getElementById("questions")?.offsetTop ?? 0;
+    window.scrollTo({ top: questionsTop, behavior: "auto" });
+    setFlowActive(true);
+  }
+
+  function stopFlow() {
+    setFlowActive(false);
+    setFlowPaused(false);
+  }
+
   return (
     <main>
       <header className="hero">
@@ -215,8 +287,11 @@ export default function Home() {
             </p>
             <div className="hero-actions">
               <a className="primary-button" href="#questions">
-                74問を流し見する <span>↓</span>
+                手動で流し見する <span>↓</span>
               </a>
+              <button className="flow-launch" type="button" onClick={startFlow}>
+                <i aria-hidden="true" /> 自動流し見 ▶
+              </button>
               <button className="text-button" type="button" onClick={jumpRandom}>
                 ランダムに1問 ↗
               </button>
@@ -250,9 +325,14 @@ export default function Home() {
             <p className="eyebrow lime">FLASH RECALL</p>
             <h2>答えは、タップして開く。</h2>
           </div>
-          <button className="all-toggle" type="button" onClick={toggleAll} disabled={!filtered.length}>
-            {allVisibleOpen ? "表示中の答えを隠す" : "表示中の答えをすべて開く"}
-          </button>
+          <div className="study-actions">
+            <button className="flow-start" type="button" onClick={startFlow} disabled={!filtered.length}>
+              自動流し見を開始 ▶
+            </button>
+            <button className="all-toggle" type="button" onClick={toggleAll} disabled={!filtered.length}>
+              {allVisibleOpen ? "表示中の答えを隠す" : "表示中の答えをすべて開く"}
+            </button>
+          </div>
         </div>
 
         <div className="filters" aria-label="問題の絞り込み">
@@ -288,7 +368,7 @@ export default function Home() {
 
         <div className="question-list">
           {filtered.map((item) => {
-            const isOpen = revealed.has(item.id);
+            const isOpen = flowActive || revealed.has(item.id);
             const isDone = reviewed.has(item.id);
             return (
               <article className={isOpen ? "question-card open" : "question-card"} id={`q-${item.id}`} key={item.id}>
@@ -299,7 +379,7 @@ export default function Home() {
                 <div className="card-content">
                   <span className="category-tag">{item.category}</span>
                   <h3>{item.question}</h3>
-                  <div className={isOpen ? "answer visible" : "answer"} aria-hidden={!isOpen}>
+                  <div id={`answer-${item.id}`} className={isOpen ? "answer visible" : "answer"} aria-hidden={!isOpen}>
                     <p className="answer-label">ANSWER</p>
                     <p className="answer-value">{item.answer}</p>
                     <p className="answer-why"><span>WHY</span>{item.why}</p>
@@ -352,6 +432,35 @@ export default function Home() {
         <p>C LANGUAGE / GRADE 3 / NO.63 + NO.67</p>
         <p>74 QUESTIONS — QUICK RECALL EDITION</p>
       </footer>
+
+      {flowActive && (
+        <aside className="flow-dock" aria-label="自動流し見モード">
+          <span className={flowPaused ? "flow-status paused" : "flow-status"} aria-hidden="true" />
+          <div className="flow-copy" aria-live="polite">
+            <strong>AUTO FLOW</strong>
+            <small>{flowPaused ? "一時停止中" : "問題と答えを自動スクロール中"}</small>
+          </div>
+          <div className="speed-buttons" aria-label="スクロール速度">
+            {FLOW_SPEEDS.map((speed) => (
+              <button
+                type="button"
+                key={speed.value}
+                className={flowSpeed === speed.value ? "active" : ""}
+                onClick={() => setFlowSpeed(speed.value)}
+                aria-pressed={flowSpeed === speed.value}
+              >
+                {speed.label}
+              </button>
+            ))}
+          </div>
+          <button className="flow-pause" type="button" onClick={() => setFlowPaused((current) => !current)}>
+            {flowPaused ? "再開 ▶" : "一時停止 Ⅱ"}
+          </button>
+          <button className="flow-stop" type="button" onClick={stopFlow} aria-label="自動流し見を終了">
+            終了 ×
+          </button>
+        </aside>
+      )}
     </main>
   );
 }
