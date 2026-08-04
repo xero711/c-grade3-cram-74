@@ -4,7 +4,7 @@
 
 ## 公開ページ
 
-https://xero711.github.io/c-grade3-cram-74/
+https://xero-x.me/c-grade3-cram-74/
 
 ## 機能
 

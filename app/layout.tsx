@@ -3,7 +3,7 @@ import "./globals.css";
 
 const isGitHubPages = process.env.GITHUB_PAGES === "true";
 const siteUrl = isGitHubPages
-  ? "https://xero711.github.io/c-grade3-cram-74"
+  ? "https://xero-x.me/c-grade3-cram-74"
   : "https://c-grade3-cram-74.rei711.chatgpt.site";
 const image = `${siteUrl}/og.png`;
 
